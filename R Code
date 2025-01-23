@@ -1,0 +1,138 @@
+### Libraries
+library(gtrendsR)
+library(Hmisc)
+library(rvest)
+library(tidyverse)
+library(zoo)
+
+### Public Interest Data Load, per professor instructions
+## Google, US, time since 2014-current, input "mass shootings"
+pub.interest<-read.csv("data")
+pub.interest$Month <- as.character(pub.interest$Month)
+pub.interest$Month <- as.yearmon(pub.interest$Month, format="%Y-%m")
+
+### GVA Data Load, per professor instructions
+## method may no longer work
+years <- as.character(2014:2024)
+pages <- 0:35
+url <- 'https://www.gunviolencearchive.org/reports/mass-shooting'
+urls <- paste0(url, "?page=", pages)
+urls.all <- NA
+
+for (file in urls) {
+  tmp.url <- paste0(file, "&year=", years)
+  urls.all <- c(tmp.url, urls.all)
+}
+
+urls.all <- urls.all[!is.na(urls.all)]
+
+get.gva <- function(site) {
+  site %>%
+    read_html()%>%
+    html_nodes(xpath = '//*[@id="content"]/div/div/div') %>%
+    html_table()
+}
+
+results <- sapply(urls.all, get.gva)
+
+data.gva <- data.frame()
+for (urls in results) {
+  tmp.gva <- data.frame(urls)
+  data.gva <- rbind(tmp.gva, data.gva)
+}
+
+### Clean data per professor instructions
+data.gva$date <- as.Date(data.gva$Incident.Date, format = "%B %d, %Y")
+data.gva$source <- "Gun Violence Archive"
+data.gva$total.victims <- data.gva$Victims.Killed + data.gva$Victims.Injured +
+  data.gva$Suspects.Killed + data.gva$Suspects.Injured
+data.gva$day <- weekdays(data.gva$date) 
+data.gva <- data.gva[c(1,12,4,3,6:9,14,15,13)]
+names(data.gva) <- c("event", "date", "city", "state", "victim.killed", "victim.injured",
+                     "suspect.killed", "suspect.injured",
+                     "total", "day", "source")
+data.gva <- data.gva[!duplicated(data.gva), ]
+
+events.by.state <- data.gva %>% 
+  group_by(state) %>% 
+  summarise(count = n()) %>%
+  mutate(PCT = count/sum(count)*100)
+
+data.gva$year <- substr(data.gva$date, 0, 4)
+events.per.year <- data.gva %>% 
+  group_by(year) %>% 
+  summarise(count = n()) %>%
+  mutate(PCT = count/sum(count)*100)
+
+data.gva$month <- substr(data.gva$date, 6, 7)
+events.per.month <- data.gva %>% 
+  group_by(month) %>% 
+  summarise(count = n()) %>%
+  mutate(PCT = count/sum(count)*100)
+
+data.gva$yearmonth <- paste(data.gva$year, data.gva$month, sep = "-")
+events.per.yearmonth <- data.gva %>% 
+  group_by(yearmonth) %>% 
+  summarise(count = n()) %>%
+  mutate(PCT = count/sum(count)*100)
+
+victims.per.state <- aggregate(data.gva$total, by = list(Category = data.gva$state), FUN = sum)
+victims.per.year <- aggregate(data.gva$total, by = list(Category= data.gva$year), FUN = sum)
+victims.per.month <- aggregate(data.gva$total, by = list(Category = data.gva$month), FUN = sum)
+victims.per.yearmonth <- aggregate(data.gva$total, by = list(Category= data.gva$yearmon), FUN = sum)
+
+#Analysis
+
+## Mass shootings/t-test
+### Comparing victim counts, measured by yearmonth, break point is Las Vegas (10/2/2017)
+events.pre <- subset(data.gva, date < '2017-10-01') # excludes the attack
+events.post <- subset(data.gva, date > '2017-10-01')
+
+pre.yearmonth.vict <- aggregate(events.pre$total, by=list(Category=events.pre$yearmonth), FUN=sum)
+post.yearmonth.vict <- aggregate(events.post$total, by=list(Category=events.post$yearmonth), FUN=sum)
+
+t.test(pre.yearmonth.vict$x, post.yearmonth.vict$x)
+
+
+#Visuals
+
+## T-test - bar chart
+ggplot(pre.yearmonth.vict, aes(x = Category, y = x)) + 
+  geom_bar(stat = "identity", color = 'blue', fill = 'white') + 
+  labs(title = "Victim Casualties by Date", subtitle = "Separated by Las Vegas Shooting",
+       x = "Date", y = "Casualties") + 
+  ylim(0, 500) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 90))
+
+ggplot(post.yearmonth.vict, aes(x = Category, y = x)) + 
+  geom_bar(stat = "identity", color = 'blue', fill = 'white') + 
+  labs(title = "Victim Casualties by Date", subtitle = "Separated by Las Vegas Shooting",
+       x = "Date", y = "Casualties") + 
+  theme_classic() +
+  ylim(0, 500) +
+  theme(axis.text.x = element_text(angle = 90))
+
+## Line graph
+ggplot(pub.interest, aes(x = Month, y = InterestOverTime)) +
+  geom_line() +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 90)) +
+  labs(title = 'Interest in Mass Shootings Over Time', subtitle = 'Based on Google Trends Data',
+       y = 'Interest Over Time')
+
+## Intersection Graph
+require(gridExtra)
+interest.line<-ggplot(pub.interest, aes(x = Month, y = InterestOverTime)) +
+  geom_line() +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 90)) +
+  labs(title = 'Interest in Mass Shootings Over Time', subtitle = 'Based on Google Trends Data',
+       y = 'Interest Over Time')
+victims.line<-ggplot(victims.per.yearmonth, aes(x = Month, y = x)) +
+  geom_line() +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 90)) +
+  labs(title = 'Victims Per Mass Shootings',
+       y = 'Number of Victims', x = 'Date')
+grid.arrange(interest.line, victims.line, ncol=2)
