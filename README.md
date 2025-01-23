@@ -1,2 +1,2 @@
 # Trends-Over-Time
-Analysis of mass shooting and google search trends over time
+This project was created as part of the George Mason University class CRIM 515, Criminal Justice Research Methods and Data Analysis. The project aims to investigate if there is a significant difference in mass shootings before and after 10/01/2017, how public interest in mass shootings change over time, and how public interest in mass shootings correlates with mass shooting events. The project uses mass shooting data from Gun Violence Archive and Google searches for "mass shootings". Statistical methods include visual examination of line and bar charts as well as a t-test. 
